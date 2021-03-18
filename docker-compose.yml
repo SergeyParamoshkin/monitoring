@@ -1,0 +1,95 @@
+version: "3.7"
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  bot_data:
+
+services:
+  nginx:
+    image: nginx:1.17.9-alpine
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./configs/nginx/conf.d:/etc/nginx/conf.d
+      - ./configs/nginx/www:/var/www
+      - ./configs/nginx/ssl:/etc/nginx/ssl
+      - ./configs/nginx/other:/etc/nginx/other
+      - /var/log/nginx:/var/log/nginx
+      - /etc/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+
+  prometheus:
+    image: prom/prometheus:v2.25.0
+    volumes:
+      - ./configs/prometheus/targets:/etc/prometheus/targets
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=70d"
+      - "--log.level=debug"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.20.0
+    volumes:
+      - ./configs/alertmanager/:/etc/alertmanager/
+    command:
+      - "--config.file=/etc/alertmanager/config.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.route-prefix=/alertmanager"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:7.4.3
+    user: "472"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/grafana.ini:/etc/grafana/grafana.ini
+    environment:
+      GF_SECURITY_ADMIN_USER: "geek"
+      GF_SECURITY_ADMIN_PASSWORD: "rILWkPr7Wx.p6o#%sGV"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    restart: unless-stopped
+
+  blackbox_exporter:
+    image: prom/blackbox-exporter:v0.16.0
+    volumes:
+      - ./configs/blackbox_exporter/config.yml:/etc/blackbox_exporter/config.yml
+    restart: unless-stopped
+
+  alertmanager-bot:
+    image: serg3091/prometheus_bot:v0.0.1
+    volumes:
+      - ./configs/alertmanager-bot/config.yaml:/config.yaml
+      - ./configs/alertmanager-bot/template.tmpl:/template.tmpl
+    restart: unless-stopped
+
+  node_exporter:
+    image: prom/node-exporter:v0.18.1
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)"
+      - "--collector.netstat.fields=(.*)"
+      - "--collector.vmstat.fields=(.*)"
+      - "--collector.interrupts"
+    restart: unless-stopped
+
+  cadvisor:
+    image: google/cadvisor:v0.32.0
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
